@@ -2,10 +2,10 @@ import { Identifier, LabeledStatement, VariableDeclarator } from '@babel/types';
 import { Node, NodePath, Visitor } from '@babel/traverse';
 
 export interface InlineBindingVisitorState {
-  value: Node | string | null | undefined,
-  visitedNodes?: Node[],
-  identifier?: Identifier,
-  name?: string,
+  value: Node | string | null | undefined;
+  visitedNodes?: Node[];
+  identifier?: Identifier;
+  name?: string;
 }
 
 /**
@@ -29,5 +29,5 @@ export const inlineBindingVisitor: Visitor<InlineBindingVisitorState> = {
         path.replaceWith(this.value);
       }
     }
-  }
+  },
 };

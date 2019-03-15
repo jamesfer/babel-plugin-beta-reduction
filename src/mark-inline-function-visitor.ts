@@ -20,7 +20,7 @@ function hasConstantBindings(scope: Scope) {
   return Object.keys(scope.bindings).every(name => scope.bindings[name].constant);
 }
 
-export function areParametersInlineable(params: Array<LVal>) {
+export function areParametersInlineable(params: LVal[]) {
   return params.every(param => isIdentifier(param) || (
     // The argument of a rest parameter is legally allowed to be a pattern
     isRestElement(param) && isIdentifier(param.argument)

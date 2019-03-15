@@ -24,5 +24,5 @@ export const inlineLocalDeclarationsVisitor: Visitor = {
 
     // Remove declaration
     path.remove();
-  }
+  },
 };

@@ -9,7 +9,6 @@ import {
   isFunctionExpression,
   isIdentifier, isRestElement, Expression, SpreadElement, Identifier,
 } from '@babel/types';
-import * as util from 'util';
 import { InlineFunctionsMap, PluginState } from './index';
 import { inlineBindingVisitor } from './inline-binding-visitor';
 import { inlineLocalDeclarationsVisitor } from './inline-local-declarations-visitor';
@@ -79,7 +78,7 @@ function inlineSingleParameter(
 ) {
   const uid = path.scope.generateUid(param.name);
   path.scope.rename(param.name, uid);
-  path.parentPath.traverse(inlineBindingVisitor, { name: uid, value });
+  path.parentPath.traverse(inlineBindingVisitor, { value, name: uid });
 }
 
 function performParameterInlining(
@@ -117,13 +116,14 @@ function performEtaExpansion(
   // Replace the current call with just the return statement
   const returnExpression = getFunctionBodyExpression(callee.node);
   if (!returnExpression) {
-    throw new Error('Attempted to inline a function that contained statements that could\'t be inlined.');
+    throw new Error(
+      'Attempted to inline a function that contained statements that could\'t be inlined.',
+    );
   }
   path.replaceWith(returnExpression);
 
   return true;
 }
-
 
 export const performEtaExpansionVisitor: Visitor<PluginState> = {
   CallExpression(path) {

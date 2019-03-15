@@ -4,11 +4,11 @@ import { performEtaExpansionVisitor } from './perform-eta-expansion-visitor';
 import { PluginObj } from '@babel/core';
 
 export interface InlineFunctionsMap {
-  [k: string]: ArrowFunctionExpression,
+  [k: string]: ArrowFunctionExpression;
 }
 
 export interface PluginState {
-  inlineFunctions: InlineFunctionsMap,
+  inlineFunctions: InlineFunctionsMap;
 }
 
 export default function plugin(): PluginObj<PluginState> {

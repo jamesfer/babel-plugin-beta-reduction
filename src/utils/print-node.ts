@@ -10,7 +10,7 @@ export function printNode(node: Node) {
       additional = `${printNode(node.callee)} (${node.arguments.map(printNode).join(', ')})`;
       break;
     case 'NumericLiteral':
-      additional = '' + node.value;
+      additional = `${node.value}`;
       break;
     case 'BinaryExpression':
       additional = `${printNode(node.left)} ${node.operator} ${printNode(node.right)}`;
