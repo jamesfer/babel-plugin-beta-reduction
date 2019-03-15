@@ -1,3 +1,6 @@
 {
-  "presets": ["airbnb"]
+  "extends": "tslint-config-airbnb",
+  "rules": {
+    "function-name": [true, { "method-regex": "^[\\w\\d]+$" }]
+  }
 }

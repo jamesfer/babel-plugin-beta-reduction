@@ -3,6 +3,7 @@
     "lib": [
       "es2017"
     ],
+    "outDir": "dist",
     "strict": true
   },
   "include": [
