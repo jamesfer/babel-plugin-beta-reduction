@@ -1,4 +1,11 @@
-import { Identifier, LabeledStatement, VariableDeclarator } from '@babel/types';
+import {
+  Identifier, isAssignmentPattern,
+  isLabeledStatement,
+  isVariableDeclarator,
+  LabeledStatement,
+  VariableDeclarator,
+  isRestElement, isFunctionDeclaration, LVal, isIdentifier,
+} from '@babel/types';
 import { Node, NodePath, Visitor } from '@babel/traverse';
 
 export interface InlineBindingVisitorState {
@@ -8,12 +15,20 @@ export interface InlineBindingVisitorState {
   name?: string;
 }
 
+function matchesIdentifier(lVal: LVal | null, identifier: Identifier) {
+  return lVal && isIdentifier(lVal) && lVal.name === identifier.name;
+}
+
 /**
  * Returns true if this path can be inlined.
  */
-function canInlineIdentifier(path: NodePath) {
-  return (path.parentPath.node as LabeledStatement).label !== path.node
-    && (path.parentPath.node as VariableDeclarator).id !== path.node;
+function canInlineIdentifier(path: NodePath<Identifier>) {
+  const parentNode = path.parentPath.node;
+  return !(isLabeledStatement(parentNode) && matchesIdentifier(parentNode.label, path.node))
+    && !(isVariableDeclarator(parentNode) && matchesIdentifier(parentNode.id, path.node))
+    && !(isFunctionDeclaration(parentNode) && matchesIdentifier(parentNode.id, path.node))
+    && !(isAssignmentPattern(parentNode) && matchesIdentifier(parentNode.left, path.node))
+    && !(isRestElement(parentNode) && matchesIdentifier(parentNode.argument, path.node));
 }
 
 /**

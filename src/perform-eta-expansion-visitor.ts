@@ -72,13 +72,14 @@ function performFunctionInlining(
 }
 
 function inlineSingleParameter(
-  path: NodePath,
+  functionPath: NodePath,
   param: Identifier,
   value: Node | string | null | undefined,
 ) {
-  const uid = path.scope.generateUid(param.name);
-  path.scope.rename(param.name, uid);
-  path.parentPath.traverse(inlineBindingVisitor, { value, name: uid });
+  // Generate unique name for the parameter
+  const uid = functionPath.scope.generateUid(param.name);
+  functionPath.scope.rename(param.name, uid);
+  functionPath.traverse(inlineBindingVisitor, { value, name: uid });
 }
 
 function performParameterInlining(
@@ -86,15 +87,12 @@ function performParameterInlining(
   parameters: Node[],
 ) {
   callee.node.params.forEach((param, index) => {
-    // Need to cast to NodePath because path.get sometimes returns an array
-    const body = callee.get('body') as NodePath;
-
     if (isIdentifier(param)) {
-      inlineSingleParameter(body, param, parameters[index]);
+      inlineSingleParameter(callee, param, parameters[index]);
     } else if (isRestElement(param) && isIdentifier(param.argument)) {
       // Need an explicit cast here because arguments could also contain some JSX expression
       const restValues = parameters.slice(index) as (Expression | SpreadElement)[];
-      inlineSingleParameter(body, param.argument, arrayExpression(restValues));
+      inlineSingleParameter(callee, param.argument, arrayExpression(restValues));
     }
   });
 }
@@ -126,15 +124,17 @@ function performEtaExpansion(
 }
 
 export const performEtaExpansionVisitor: Visitor<PluginState> = {
-  CallExpression(path) {
-    const inlineFunctions = this.inlineFunctions;
-    const inlined = performFunctionInlining(path, inlineFunctions);
-    const expanded = performEtaExpansion(path);
+  CallExpression: {
+    exit(path) {
+      const inlineFunctions = this.inlineFunctions;
+      const inlined = performFunctionInlining(path, inlineFunctions);
+      const expanded = performEtaExpansion(path);
 
-    // These variables should not be inlined because we do not want to shortcut the functions
-    if (inlined || expanded) {
-      (path.scope as any).crawl();
-      // path.traverse(performEtaExpansionVisitor, { inlineFunctions });
-    }
+      // These variables should not be inlined because we do not want to shortcut the functions
+      if (inlined || expanded) {
+        (path.scope as any).crawl();
+        // path.traverse(performEtaExpansionVisitor, { inlineFunctions });
+      }
+    },
   },
 };
