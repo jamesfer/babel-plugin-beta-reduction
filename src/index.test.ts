@@ -323,6 +323,15 @@ const resultFn = map(e => e, e => e.value * 10);`,
     'const resultFn = e => e.value * 10;',
   ));
 
+  it('should inline constant object literal member expressions', () => expectTransform(
+    `
+const a = {
+  name: "Steve",
+  age: 35,
+}.name;`,
+    'const a = "Steve";',
+  ));
+
   it.each([1, 2, 3, 4, 5])('should inline many functions', i => (
     expectTransformFile(
       `./test-inputs/token-matchers-${i}.in.js`,

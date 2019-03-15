@@ -133,8 +133,8 @@ export const performEtaExpansionVisitor: Visitor<PluginState> = {
 
     // These variables should not be inlined because we do not want to shortcut the functions
     if (inlined || expanded) {
-      // (path.scope as any).crawl();
-      path.traverse(performEtaExpansionVisitor, { inlineFunctions });
+      (path.scope as any).crawl();
+      // path.traverse(performEtaExpansionVisitor, { inlineFunctions });
     }
   },
 };
