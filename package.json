@@ -1,5 +1,5 @@
 {
-  "name": "exp-babel-plugin",
+  "name": "babel-plugin-beta-reduction",
   "version": "1.0.0",
   "main": "dist/index.js",
   "license": "MIT",
