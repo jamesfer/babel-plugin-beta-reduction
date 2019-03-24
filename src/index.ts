@@ -19,6 +19,7 @@ export default function plugin(): PluginObj<PluginState> {
       this.inlineFunctions = {};
     },
     visitor: {
+      // TODO handle cases where the function is declared after it's use
       ...markInlineFunctionsVisitor,
       ...performEtaExpansionVisitor,
       ...inlineObjectLiteralReference,

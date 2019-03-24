@@ -17,7 +17,7 @@ function transform(code: string) {
 
 async function transformToCode(code: string) {
   const result = await transform(code);
-  return result ? result.code : '';
+  return result && result.code ? result.code.replace(/^\s*$(?:\r\n?|\n)/gm, '') : '';
 }
 
 async function expectTransform(inputCode: string, expectedCode: string) {
@@ -93,6 +93,206 @@ function add(a, b) {
 }
 console.log(add(1, 3));`,
     'console.log(1 + 3 + 10 + 20);',
+  ));
+
+  it('should hoist a complex declaration', () => expectTransform(
+    `
+/**
+ * @inline
+ */
+function add(a, b) {
+  const c = 6 ** 4;
+  return a + b + c;
+}
+console.log(add(1, 3));`,
+    `
+const _a = 1,
+      _b = 3,
+      _c = 6 ** 4;
+console.log(_a + _b + _c);`,
+  ));
+
+  it('should not hoist a variable that is declared inside a conditional expression', () => (
+    expectTransform(
+      `
+const a = something ? (() => {
+  const b = 5;
+  return b / 3;
+})() : 6;`,
+      `
+const a = something ? (() => {
+  const b = 5;
+  return b / 3;
+})() : 6;`,
+    )
+  ));
+
+  it('should hoist a variable that was declared in a if statement', () => expectTransform(
+    `
+if (a) {
+  const b = (() => {
+    const c = Math.sin(4);
+    return c ** 2;
+  })();
+}`,
+    `
+if (a) {
+  const _c = Math.sin(4);
+  const b = _c ** 2;
+}`,
+  ));
+
+  it('should hoist a variable that was declared in a if statement with no body', () => (
+    expectTransform(
+      `
+if (a)
+  console.log((() => {
+    const c = Math.sin(4);
+    return c ** 2;
+  })());`,
+      `
+if (a) {
+  const _c = Math.sin(4);
+  console.log(_c ** 2);
+}`,
+    )
+  ));
+
+  it('should hoist a variable that was called inside an arrow function expression', () => (
+    expectTransform(
+      `
+() => (
+  (() => {
+    const c = Math.sin(4);
+    return c ** 2;
+  })()
+)`,
+      `
+() => {
+  const _c = Math.sin(4);
+  return _c ** 2;
+};`,
+    )
+  ));
+
+  it('should hoist a variable inside an inlined function, used in an arrow function', () => (
+    expectTransform(
+      `
+/**
+ * @inline
+ */
+function wrap(value) {
+  const message = 'Wrapping a value: ' + value;
+  return { value, message };
+}
+
+const result = thing => wrap([thing, 'This is a string']);
+`,
+      `
+const result = thing => {
+  const _value = [thing, 'This is a string'],
+        _message = 'Wrapping a value: ' + _value;
+  return {
+    value: _value,
+    message: _message
+  };
+};`,
+    )
+  ));
+
+  it('should hoist a variable inside an inlined function, used deeply in an arrow function', () => (
+    expectTransform(
+      `
+/**
+ * @inline
+ */
+function wrap(value) {
+  const message = 'Wrapping a value: ' + value;
+  return { value, message };
+}
+
+const result = thing => Object.keys(wrap([thing, 'This is a string']));
+`,
+      `
+const result = thing => {
+  const _value = [thing, 'This is a string'],
+        _message = 'Wrapping a value: ' + _value;
+  return Object.keys({
+    value: _value,
+    message: _message
+  });
+};`,
+    )
+  ));
+
+  it('should inline two usages of the same inlined function', () => expectTransform(
+    `
+/**
+ * @inline
+ */
+function constant(value) {
+  return () => value;
+}
+
+const result = thing => constant(constant(thing));`,
+    `
+const result = thing => {
+  const _value2 = thing;
+  const _value = () => _value2;
+  return () => _value;
+};`,
+  ));
+
+  it('should inline a function that is not immediately called', () => expectTransform(
+    `
+/**
+ * @inline
+ */
+function map(list, mapper) {
+  return list.map(mapper);
+}
+
+/**
+ * @inline
+ */
+function multiply(number) {
+  return number * 2;
+}
+
+const result = map([1, 2, 3], multiply);`,
+    `
+const _list = [1, 2, 3],
+      _mapper = number => {
+  return number * 2;
+};
+const result = _list.map(_mapper);`,
+  ));
+
+  it('should not insert a declaration if there are no variables to hoist', () => expectTransform(
+    'const result = (() => 5)(10);',
+    'const result = 5;',
+  ));
+
+  it.skip('should correctly hoist parameters with default arguments', () => expectTransform(
+    `
+/**
+ * @inline
+ */
+function wrap(value, message = 'Wrapping a value: ' + value) {
+  return { value, message };
+}
+
+const result = thing => wrap([thing, 'This is a string']);
+`,
+    `
+const result = thing => {
+  const _value = [thing, 'This is a string'];
+  const _message = 'Wrapping a value: ' + _value;
+  return {
+    value: _value,
+    message: _message
+  };
+};`,
   ));
 
   it('should inline a function that returns a lambda', () => expectTransform(

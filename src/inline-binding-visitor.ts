@@ -1,10 +1,17 @@
 import {
-  Identifier, isAssignmentPattern,
+  Identifier,
+  isAssignmentPattern,
   isLabeledStatement,
   isVariableDeclarator,
   LabeledStatement,
   VariableDeclarator,
-  isRestElement, isFunctionDeclaration, LVal, isIdentifier,
+  isRestElement,
+  isFunctionDeclaration,
+  LVal,
+  isIdentifier,
+  isMemberExpression,
+  isClassMethod,
+  isClassProperty, isBreakStatement, isCatchClause,
 } from '@babel/types';
 import { Node, NodePath, Visitor } from '@babel/traverse';
 
@@ -15,20 +22,26 @@ export interface InlineBindingVisitorState {
   name?: string;
 }
 
-function matchesIdentifier(lVal: LVal | null, identifier: Identifier) {
+function matchesIdentifier(lVal: Node | null, identifier: Identifier) {
   return lVal && isIdentifier(lVal) && lVal.name === identifier.name;
 }
 
 /**
  * Returns true if this path can be inlined.
  */
-function canInlineIdentifier(path: NodePath<Identifier>) {
+export function canInlineIdentifier(path: NodePath<Identifier>) {
   const parentNode = path.parentPath.node;
   return !(isLabeledStatement(parentNode) && matchesIdentifier(parentNode.label, path.node))
     && !(isVariableDeclarator(parentNode) && matchesIdentifier(parentNode.id, path.node))
     && !(isFunctionDeclaration(parentNode) && matchesIdentifier(parentNode.id, path.node))
     && !(isAssignmentPattern(parentNode) && matchesIdentifier(parentNode.left, path.node))
-    && !(isRestElement(parentNode) && matchesIdentifier(parentNode.argument, path.node));
+    && !(isRestElement(parentNode) && matchesIdentifier(parentNode.argument, path.node))
+    && !(isMemberExpression(parentNode) && matchesIdentifier(parentNode.property, path.node))
+    && !(isClassMethod(parentNode) && matchesIdentifier(parentNode.key, path.node))
+    && !(isClassProperty(parentNode) && matchesIdentifier(parentNode.key, path.node))
+    && !(isBreakStatement(parentNode) && matchesIdentifier(parentNode.label, path.node))
+    && !(isCatchClause(parentNode) && matchesIdentifier(parentNode.param,  path.node));
+  // TODO maybe turn this into a whitelist
 }
 
 /**
