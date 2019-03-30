@@ -30,6 +30,7 @@ async function expectTransformFile(inputPath: string, outputPath: string) {
   expect(await transformToCode(input)).toBe(output.trim());
 }
 
+// TODO convert all comments to one line style
 describe('plugin', () => {
   it('should inline a simple function', () => expectTransform(
     `
@@ -132,13 +133,13 @@ const a = something ? (() => {
 if (a) {
   const b = (() => {
     const c = Math.sin(4);
-    return c ** 2;
+    return c * c ** 2;
   })();
 }`,
     `
 if (a) {
   const _c = Math.sin(4);
-  const b = _c ** 2;
+  const b = _c * _c ** 2;
 }`,
   ));
 
@@ -148,12 +149,12 @@ if (a) {
 if (a)
   console.log((() => {
     const c = Math.sin(4);
-    return c ** 2;
+    return c * c ** 2;
   })());`,
       `
 if (a) {
   const _c = Math.sin(4);
-  console.log(_c ** 2);
+  console.log(_c * _c ** 2);
 }`,
     )
   ));
@@ -175,7 +176,7 @@ if (a) {
     )
   ));
 
-  it('should hoist a variable inside an inlined function, used in an arrow function', () => (
+  it('should inline a variable inside an inlined function, used in an arrow function', () => (
     expectTransform(
       `
 /**
@@ -200,6 +201,26 @@ const result = thing => {
     )
   ));
 
+  it('should hoist a variable inside an inlined function, used in an arrow function', () => (
+    expectTransform(
+      `
+/**
+ * @inline
+ */
+function wrap(quote, message) {
+  return quote + message + quote
+}
+
+const quote = message => wrap('"', message);
+`,
+      `
+const quote = message => {
+  const _quote = '"';
+  return _quote + message + _quote;
+};`,
+    )
+  ));
+
   it('should hoist a variable inside an inlined function, used deeply in an arrow function', () => (
     expectTransform(
       `
@@ -215,11 +236,10 @@ const result = thing => Object.keys(wrap([thing, 'This is a string']));
 `,
       `
 const result = thing => {
-  const _value = [thing, 'This is a string'],
-        _message = 'Wrapping a value: ' + _value;
+  const _value = [thing, 'This is a string'];
   return Object.keys({
     value: _value,
-    message: _message
+    message: 'Wrapping a value: ' + _value
   });
 };`,
     )
@@ -240,6 +260,92 @@ const result = thing => {
   const _value2 = thing;
   const _value = () => _value2;
   return () => _value;
+};`,
+  ));
+
+  it('should inline a function sandwich', () => expectTransform(
+    `
+/** @inline */
+function simple(a) {
+  return 'a' + a;
+}
+/** @inline */
+function complex(b) {
+  return b + b;
+}
+const result = c => simple(complex(simple(c)));`,
+    `
+const result = c => {
+  const _b = 'a' + c;
+  return 'a' + (_b + _b);
+};`,
+  ));
+
+  it('should inline a nested function call with a duplicate variable', () => expectTransform(
+    `
+/** @inline */
+function simple(a) {
+  return 'a' + a;
+}
+const result = (a) => simple(simple(a));`,
+    `
+const result = a => {
+  return 'a' + ('a' + a);
+};`,
+  ));
+
+  it('should inline a function with a parameter that exists in the parent scope', () => (
+    expectTransform(
+      `
+/** @inline */
+function inner(v) {
+  return Math.sin(v) * Math.cos(v);
+}
+
+function outer(v) {
+  return inner(v) * 2;
+}`,
+      `
+function outer(v) {
+  const _v = v;
+  return Math.sin(_v) * Math.cos(_v) * 2;
+}`,
+    )
+  ));
+
+  it('should inline a function with a variable that exists in the parent scope', () => (
+    expectTransform(
+      `
+/** @inline */
+function inner() {
+  const v = 1;
+  return Math.sin(v) * Math.cos(v);
+}
+
+function outer(v) {
+  return inner() * v;
+}`,
+      `
+function outer(v) {
+  const _v = 1;
+  return Math.sin(_v) * Math.cos(_v) * v;
+}`,
+    )
+  ));
+
+  it('should inline two sibling functions', () => expectTransform(
+    `
+/** @inline */
+function double(a) {
+  return a + a;
+}
+
+const result = () => Math.max(double(1), double(2));`,
+    `
+const result = () => {
+  const _a = 1;
+  const _a2 = 2;
+  return Math.max(_a + _a, _a2 + _a2);
 };`,
   ));
 

@@ -1,5 +1,3 @@
-import generate from '@babel/generator';
-import { expression } from '@babel/template';
 import { Node, NodePath, Scope, Visitor } from '@babel/traverse';
 import {
   arrayExpression,
@@ -10,16 +8,13 @@ import {
   Expression, expressionStatement,
   FunctionExpression,
   Identifier,
-  isArrowFunctionExpression,
-  isBlockStatement,
-  isCallExpression,
+  isArrowFunctionExpression, isBlockStatement, isConditionalExpression,
   isExpression,
   isFunctionExpression,
-  isIdentifier,
-  isIfStatement,
-  isJSXNamespacedName,
+  isIdentifier, isIfStatement,
+  isJSXNamespacedName, isLogicalExpression, isProgram,
   isRestElement,
-  isReturnStatement, isStatement,
+  isStatement,
   JSXNamespacedName,
   LVal, ReturnStatement,
   returnStatement,
@@ -30,15 +25,12 @@ import {
   variableDeclarator,
   VariableDeclarator,
 } from '@babel/types';
-import {
-  hoistDeclaration, findHoistedVariableInsertionPoint,
-  hoistLocalDeclarationsVisitor, prepareHoistedVariableInsertionPoint,
-} from './hoist-local-declarations-visitor';
 import { InlineFunctionsMap, PluginState } from './index';
-import { canInlineIdentifier, inlineBindingVisitor } from './inline-binding-visitor';
-import { inlineFunctionIdentifierVisitor } from './inline-function-identifier-visitor';
+import {
+  canInlineIdentifier,
+  inlineBindingVisitor,
+} from './inline-binding-visitor';
 import { areParametersInlineable } from './mark-inline-function-visitor';
-import generator from '@babel/generator';
 
 function getReturnExpression(node: Node): Node | null {
   if (node.type === 'BlockStatement' && node.body.length === 1) {
@@ -52,13 +44,15 @@ function getReturnExpression(node: Node): Node | null {
   return null;
 }
 
-function getFunctionBodyExpression(callee: ArrowFunctionExpression | FunctionExpression) {
+function getFunctionBodyExpression(
+  callee: ArrowFunctionExpression | FunctionExpression,
+): Node | null {
   return callee.type === 'ArrowFunctionExpression'
   && callee.body.type !== 'BlockStatement'
     ? callee.body : getReturnExpression(callee.body);
 }
 
-function isEtaExpandableFunctionBody(block: Node) {
+function isEtaExpandableFunctionBody(block: Node): boolean {
   if (block.type !== 'BlockStatement') {
     return true;
   }
@@ -82,10 +76,34 @@ function isEtaExpandable(
     && isEtaExpandableFunctionBody(callee.node.body);
 }
 
+export function findHoistedVariableInsertionPoint(path: NodePath): NodePath | undefined {
+  const parent = path.parent;
+
+  if (
+    isBlockStatement(parent)
+    || isProgram(parent)
+    || isIfStatement(parent)
+    || isArrowFunctionExpression(parent)
+  ) {
+    return path;
+  }
+
+  // These statements provide short circuit evaluation and therefore we cannot add variables to them
+  // as it would cause more work to be done by the program.
+  if (
+    isConditionalExpression(parent)
+      || isLogicalExpression(parent)
+  ) {
+    return undefined;
+  }
+
+  return findHoistedVariableInsertionPoint(path.parentPath);
+}
+
 function performFunctionInlining(
   path: NodePath<CallExpression>,
   inlineFunctions: InlineFunctionsMap,
-) {
+): boolean {
   if (isIdentifier(path.node.callee)) {
     const functionExpression = inlineFunctions[path.node.callee.name];
     if (functionExpression) {
@@ -100,7 +118,7 @@ function performFunctionInlining(
 function performFunctionInliningOnIdentifier(
   path: NodePath<Identifier>,
   inlineFunctions: InlineFunctionsMap,
-) {
+): void {
   const functionExpression = inlineFunctions[path.node.name];
   if (functionExpression) {
     // Replace the current call with the actual function body
@@ -108,85 +126,90 @@ function performFunctionInliningOnIdentifier(
   }
 }
 
-function inlineSingleParameter(
-  functionPath: NodePath,
-  param: Identifier,
-  value: Node | string | null | undefined,
-) {
-  // Generate unique name for the parameter
-  const uid = functionPath.scope.generateUid(param.name);
-  functionPath.scope.rename(param.name, uid);
-  functionPath.traverse(inlineBindingVisitor, { value, name: uid });
-}
-
-function performParameterHoisting(
-  // callee: NodePath<FunctionExpression | ArrowFunctionExpression>,
-  calleeParameters: LVal[],
-  parameters: (Expression | SpreadElement | JSXNamespacedName)[],
-  calleeScope: Scope,
-  variableInsertionPoint: NodePath,
-) {
-  if (parameters.some(parameter => isJSXNamespacedName(parameter))) {
-    throw new Error('Cannot hoist a JSXNamespaced name');
-  }
-
-  // TODO handle spread elements in parameters
-  calleeParameters.forEach((param, index) => {
-    if (isIdentifier(param)) {
-      const parameter = parameters[index];
-      if (isExpression(parameter)) {
-        hoistDeclaration(param, parameter, calleeScope, variableInsertionPoint);
-      }
-    } else if (isRestElement(param) && isIdentifier(param.argument)) {
-      // Need an explicit cast here because arguments could also contain some JSX expression
-      const restValues = parameters.slice(index) as (Expression | SpreadElement)[];
-      const value = arrayExpression(restValues);
-      hoistDeclaration(param.argument, value, calleeScope, variableInsertionPoint);
-    }
-  });
-}
-
 export function createDeclarator(
   identifier: Identifier,
   value: Expression | null,
-  scope: Scope,
+  calleeScope: Scope,
+  destinationScope: Scope,
 ): VariableDeclarator {
   // Rename the variable
-  const newId = scope.generateUidIdentifier(identifier.name);
-  scope.rename(identifier.name, newId.name);
+  const newId = destinationScope.generateUidIdentifier(identifier.name);
+  calleeScope.rename(identifier.name, newId.name);
 
   return variableDeclarator(newId, value);
+}
+
+interface HoistInlineResult {
+  hoist: VariableDeclarator[];
+  inline: { identifier: Identifier, value: Node | null | undefined }[];
 }
 
 function createVariableDeclaratorsFromParameters(
   calleeParameters: LVal[],
   parameters: (Expression | SpreadElement | JSXNamespacedName)[],
   calleeScope: Scope,
-): VariableDeclarator[] {
+  destinationScope: Scope,
+): HoistInlineResult {
   if (parameters.some(parameter => isJSXNamespacedName(parameter))) {
     throw new Error('Cannot hoist a JSXNamespaced name');
   }
 
   // TODO handle spread elements in parameters
-  return calleeParameters.map((param, index) => {
-    if (isIdentifier(param)) {
-      const parameter = parameters[index];
-      if (isExpression(parameter)) {
-        return createDeclarator(param, parameter, calleeScope);
+  return calleeParameters.reduce(
+    (result, param, index) => {
+      if (isIdentifier(param)) {
+        const parameter = parameters[index];
+        if (isExpression(parameter)) {
+          const binding = calleeScope.getBinding(param.name);
+          if (binding) {
+            if (binding.references === 0) {
+              // This binding is not referenced, just ignore it
+              return result;
+            }
+            if (binding && binding.references === 1) {
+              // This binding only has one usage, we can just inline it
+              return {
+                hoist: result.hoist,
+                inline: [
+                  ...result.inline,
+                  { identifier: param, value: parameter },
+                ],
+              };
+            }
+          }
+
+          // This variable has to be hoisted
+          return {
+            inline: result.inline,
+            hoist: [
+              ...result.hoist,
+              createDeclarator(param, parameter, calleeScope, destinationScope),
+            ],
+          };
+        }
+      } else if (isRestElement(param) && isIdentifier(param.argument)) {
+        // Need an explicit cast here because arguments could also contain some JSX expression
+        const restValues = parameters.slice(index) as (Expression | SpreadElement)[];
+        const value = arrayExpression(restValues);
+        return {
+          inline: result.inline,
+          hoist: [
+            ...result.hoist,
+            createDeclarator(param.argument, value, calleeScope, destinationScope),
+          ],
+        };
       }
-    } else if (isRestElement(param) && isIdentifier(param.argument)) {
-      // Need an explicit cast here because arguments could also contain some JSX expression
-      const restValues = parameters.slice(index) as (Expression | SpreadElement)[];
-      const value = arrayExpression(restValues);
-      return createDeclarator(param.argument, value, calleeScope);
-    }
-    throw new Error('Could not work out how to hoist parameter');
-  });
+      throw new Error('Could not work out how to hoist parameter');
+    },
+    { hoist: [], inline: [] } as HoistInlineResult,
+  );
 }
 
 export interface CreateVariableDeclaratorsVisitorState {
   functionScope: Scope;
+  destinationScope: Scope;
   declarators: VariableDeclarator[];
+  inlines: { identifier: Identifier, value: Node | null | undefined }[];
 }
 
 /**
@@ -196,8 +219,10 @@ export const createVariableDeclaratorsVisitor: Visitor<CreateVariableDeclarators
   // TODO don't inline variables that are declared inside a nested scope
   VariableDeclaration(path) {
     const functionScope = this.functionScope;
+    const destinationScope = this.destinationScope;
     // This is used to output the this of generated declarators
     const declarators = this.declarators;
+    const inlines = this.inlines;
 
     path.node.declarations.forEach(({ id, init }) => {
       if (!isIdentifier(id)) {
@@ -205,7 +230,22 @@ export const createVariableDeclaratorsVisitor: Visitor<CreateVariableDeclarators
         throw new Error('Could not inline variable declarator because it is not an identifier');
       }
 
-      declarators.push(createDeclarator(id, init, functionScope));
+      const binding = functionScope.getBinding(id.name);
+      if (binding) {
+        if (binding.references === 0) {
+          // This binding is not referenced, we can just ignore it
+          // TODO doing this could remove required side-effects
+          return;
+        }
+
+        if (binding.references === 1) {
+          // This binding was only referenced once, we can inline it
+          inlines.push({ identifier: id, value: init });
+          return;
+        }
+      }
+
+      declarators.push(createDeclarator(id, init, functionScope, destinationScope));
     });
 
     // Remove declaration
@@ -213,17 +253,6 @@ export const createVariableDeclaratorsVisitor: Visitor<CreateVariableDeclarators
     // TODO handle the case where some variable declarators couldn't be inlined
   },
 };
-
-function convertExpressionToStatementIfNeeded(expression: NodePath): Node {
-  if (
-    !isExpression(expression.node)
-    || !isArrowFunctionExpression(expression.parent) && !isIfStatement(expression.parent)
-  ) {
-    return expression.node;
-  }
-
-  return returnStatement(expression.node);
-}
 
 function convertToStatement(node: Node): Statement {
   if (isExpression(node)) {
@@ -237,24 +266,27 @@ function convertToStatement(node: Node): Statement {
   throw new Error(`Couldn't convert ${node.type} node to statement`);
 }
 
-function convertToReturnStatement(expression: Expression): ReturnStatement {
-  return returnStatement(expression);
-}
-
-function insertStatementsBeforeExpression(insertionPoint: NodePath, statements: Statement[]): void {
+function insertStatementsBeforeExpression(
+  insertionPoint: NodePath,
+  statements: Statement[],
+): void {
   const parentPath = insertionPoint.parentPath;
   if (parentPath.isIfStatement()) {
-    insertionPoint.replaceWith(blockStatement([
+    const key = insertionPoint.parentKey
+      + (insertionPoint.inList ? `.${insertionPoint.listKey}` : '');
+    insertionPoint.parentPath.set(key, cloneDeep(blockStatement([
       ...statements,
       convertToStatement(insertionPoint.node),
-    ]));
+    ])));
   }
 
   if (parentPath.isArrowFunctionExpression()) {
-    insertionPoint.replaceWith(blockStatement([
+    const key = insertionPoint.parentKey
+      + (insertionPoint.inList ? `.${insertionPoint.listKey}` : '');
+    insertionPoint.parentPath.set(key, cloneDeep(blockStatement([
       ...statements,
       returnStatement(insertionPoint.node as Expression),
-    ]));
+    ])));
   }
 
   if (parentPath.isBlock() || parentPath.isProgram()) {
@@ -262,9 +294,20 @@ function insertStatementsBeforeExpression(insertionPoint: NodePath, statements: 
   }
 }
 
-function performEtaExpansion(path: NodePath<CallExpression>) {
+function inlineIdentifier(
+  path: NodePath,
+  identifier: Identifier,
+  value: Node | null | undefined,
+): void {
+  path.scope.rename(identifier.name);
+  path.traverse(inlineBindingVisitor, { value, identifier });
+}
+
+function performEtaExpansion(path: NodePath<CallExpression>): boolean {
   const callExpressionPath = path;
-  const callee = callExpressionPath.get('callee') as NodePath<FunctionExpression | ArrowFunctionExpression>;
+  const callee = callExpressionPath.get(
+    'callee',
+  ) as NodePath<FunctionExpression | ArrowFunctionExpression>;
   if (!isEtaExpandable(callee)) {
     return false;
   }
@@ -275,44 +318,39 @@ function performEtaExpansion(path: NodePath<CallExpression>) {
     return false;
   }
 
-  // Prepare the insertion point so that it can actually accept variables
-  // const preparedInsertionPoint = prepareHoistedVariableInsertionPoint(variableInsertionPoint);
-
-  // Check if the call expression has been changed
-  // The cast here is required because Typescript thinks callExpressionPath can only be a
-  // callExpression, and will become a never type if this assertion is not true
-  // if (!(callExpressionPath as any).isCallExpression()) {
-  //   if (!callExpressionPath.isBlockStatement()) {
-  //     throw new Error(
-  //       'The call expression was modified into something that is not a block statement',
-  //     );
-  //   }
-  //
-  //   const callStatementIndex = callExpressionPath.node.body.findIndex(statement => (
-  //     isReturnStatement(statement)
-  //       && statement.argument !== null
-  //       && isCallExpression(statement.argument)
-  //       && statement.argument.callee === callee.node
-  //   ));
-  //   if (callStatementIndex === -1) {
-  //     throw new Error('Cannot find original call statement in block statement');
-  //   }
-  //
-  //   callExpressionPath = callExpressionPath.get(`body.${callStatementIndex}.argument`) as NodePath<CallExpression>;
-  //   callee = callExpressionPath.get('callee') as NodePath<ArrowFunctionExpression | FunctionExpression>;
-  // }
-
   const calleeArguments = callee.node.params;
   const nodeArguments = callExpressionPath.node.arguments;
 
   // Inline each of the arguments in the callee's body
-  // performParameterHoisting(calleeArguments, nodeArguments, callee.scope, preparedInsertionPoint);
-  const parameterDeclarators = createVariableDeclaratorsFromParameters(calleeArguments, nodeArguments, callee.scope);
+  const {
+    hoist: parameterDeclarators,
+    inline: parameterInlines,
+  } = createVariableDeclaratorsFromParameters(
+    calleeArguments,
+    nodeArguments,
+    callee.scope,
+    variableInsertionPoint.scope,
+  );
 
   // Hoist local bindings
-  const state = { functionScope: callee.scope, declarators: [] };
+  // TODO extract into a function that returns the declarators and inlines
+  const state = {
+    functionScope: callee.scope,
+    destinationScope: variableInsertionPoint.scope,
+    // Out parameters
+    declarators: [],
+    inlines: [],
+  };
   callee.traverse(createVariableDeclaratorsVisitor, state);
   const variableDeclarators = state.declarators;
+  const variableInlines = state.inlines;
+
+  // Inline all of the required variables
+  // TODO maybe don't traverse the entire callee, just the body
+  // TODO perform all inlines in one traversal step
+  [...parameterInlines, ...variableInlines].forEach(inline => (
+    inlineIdentifier(callee, inline.identifier, inline.value)
+  ));
 
   // Replace the current call with just the return statement
   const returnExpression = getFunctionBodyExpression(callee.node);
@@ -321,6 +359,8 @@ function performEtaExpansion(path: NodePath<CallExpression>) {
       'Attempted to inline a function that contained statements that could\'t be inlined.',
     );
   }
+
+  // This is a problem. This could cause the variable insertion point to change into a block.
   callExpressionPath.replaceWith(returnExpression);
 
   // Insert all hoisted variables into the insertion point
@@ -328,10 +368,17 @@ function performEtaExpansion(path: NodePath<CallExpression>) {
     ...parameterDeclarators,
     ...variableDeclarators,
   ];
+  const insertionParent = variableInsertionPoint.parentPath;
+
   insertStatementsBeforeExpression(
     variableInsertionPoint,
     declarators.length === 0 ? [] : [variableDeclaration('const', declarators)],
   );
+
+  // Stop iterating this path and requeue the insertionParent which has the correct parent-child
+  // relationship set
+  path.stop();
+  (insertionParent as any).requeue();
 
   return true;
 }
@@ -343,23 +390,7 @@ export const performEtaExpansionVisitor: Visitor<PluginState> = {
     }
   },
   CallExpression(path) {
-    const inlined = performFunctionInlining(path, this.inlineFunctions);
-    // Attempt to inline the callee. We need to explicitly run this visitor first so that we can
-    // more easily inline the call expression.
-    // path.get('callee').traverse(
-    //   inlineFunctionIdentifierVisitor,
-    //   { inlineFunctions: this.inlineFunctions },
-    // );
-    // (path as any).resync();
-
-    const expanded = performEtaExpansion(path);
-
-    // These variables should not be inlined because we do not want to shortcut the functions
-    // if (inlined || expanded) {
-      // TODO edit babel type definitions
-      // (path as any).requeue();
-      // (path.scope as any).crawl();
-      // path.traverse(performEtaExpansionVisitor, { inlineFunctions });
-    // }
+    performFunctionInlining(path, this.inlineFunctions);
+    performEtaExpansion(path);
   },
 };
