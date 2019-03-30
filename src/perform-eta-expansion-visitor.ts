@@ -90,6 +90,8 @@ export function findHoistedVariableInsertionPoint(path: NodePath): NodePath | un
 
   // These statements provide short circuit evaluation and therefore we cannot add variables to them
   // as it would cause more work to be done by the program.
+  // TODO check what part of the conditional expression the node is used in. If it is the first
+  //      condition then it can still be safely hoisted.
   if (
     isConditionalExpression(parent)
       || isLogicalExpression(parent)
@@ -188,6 +190,7 @@ function createVariableDeclaratorsFromParameters(
           };
         }
       } else if (isRestElement(param) && isIdentifier(param.argument)) {
+        // TODO inline rest elements if they are only used once
         // Need an explicit cast here because arguments could also contain some JSX expression
         const restValues = parameters.slice(index) as (Expression | SpreadElement)[];
         const value = arrayExpression(restValues);
@@ -370,10 +373,14 @@ function performEtaExpansion(path: NodePath<CallExpression>): boolean {
   ];
   const insertionParent = variableInsertionPoint.parentPath;
 
-  insertStatementsBeforeExpression(
-    variableInsertionPoint,
-    declarators.length === 0 ? [] : [variableDeclaration('const', declarators)],
-  );
+  // TODO if there are no statements to hoist, we don't actually need to be able to find a variable
+  //      insertion point, yet if one is not located the function exits early.
+  if (declarators.length > 0) {
+    insertStatementsBeforeExpression(
+      variableInsertionPoint,
+      [variableDeclaration('const', declarators)],
+    );
+  }
 
   // Stop iterating this path and requeue the insertionParent which has the correct parent-child
   // relationship set
