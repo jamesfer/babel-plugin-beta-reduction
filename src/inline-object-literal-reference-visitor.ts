@@ -6,7 +6,7 @@ import {
   ObjectProperty,
 } from '@babel/types';
 
-export const inlineObjectLiteralReference: Visitor = {
+export const inlineObjectLiteralReferenceVisitor: Visitor = {
   MemberExpression: {
     exit(path) {
       if (isObjectExpression(path.node.object) && isIdentifier(path.node.property)) {
