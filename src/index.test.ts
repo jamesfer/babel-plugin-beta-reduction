@@ -208,10 +208,10 @@ function wrap(quote, message) {
   return quote + message + quote
 }
 
-const quote = message => wrap('"', message);
+const string = message => wrap('"', message);
 `,
       `
-const quote = message => {
+const string = message => {
   const _quote = '"';
   return _quote + message + _quote;
 };`,
@@ -297,8 +297,8 @@ function outer(v) {
 }`,
       `
 function outer(v) {
-  const _v = v;
-  return Math.sin(_v) * Math.cos(_v) * 2;
+  const _v2 = v;
+  return Math.sin(_v2) * Math.cos(_v2) * 2;
 }`,
     )
   ));
@@ -317,8 +317,8 @@ function outer(v) {
 }`,
       `
 function outer(v) {
-  const _v = 1;
-  return Math.sin(_v) * Math.cos(_v) * v;
+  const _v2 = 1;
+  return Math.sin(_v2) * Math.cos(_v2) * v;
 }`,
     )
   ));
@@ -621,6 +621,31 @@ const a = {
   age: 35,
 }.name;`,
     'const a = "Steve";',
+  ));
+
+  it('should rename any shadowed variables in the callee', () => expectTransform(
+    `
+/** @inline */
+function a(f) {
+  return t => [t, f];
+}
+
+const r = t => _t => a({ t });`,
+    `
+const r = t => _t => _t2 => [_t2, {
+  t
+}];`,
+  ));
+
+  it.skip('should inline a lambda that is called from a parameter', () => expectTransform(
+    `
+/** @inline */
+function a(t, f) {
+  return t ? f() : null;
+}
+
+const result = t => u => a(t, () => 1 + 1);`,
+    'const result = t => t ? 1 + 1 : null;',
   ));
 
   it.each([1/*, 2, 3, 4, 5*/])('should inline many functions', i => (

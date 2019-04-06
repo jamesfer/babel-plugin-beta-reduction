@@ -1,22 +1,31 @@
-import { Node, NodePath, Scope, Visitor } from '@babel/traverse';
+import { Binding, Node, NodePath, Scope, Visitor } from '@babel/traverse';
 import {
   arrayExpression,
-  ArrowFunctionExpression, blockStatement,
+  ArrowFunctionExpression,
+  blockStatement,
   BlockStatement,
   CallExpression,
   cloneDeep,
-  Expression, expressionStatement,
+  Expression,
+  expressionStatement,
   FunctionExpression,
+  getBindingIdentifiers,
   Identifier,
-  isArrowFunctionExpression, isBlockStatement, isConditionalExpression,
+  isArrowFunctionExpression,
+  isBlockStatement,
+  isConditionalExpression,
   isExpression,
   isFunctionExpression,
-  isIdentifier, isIfStatement,
-  isJSXNamespacedName, isLogicalExpression, isProgram,
+  isIdentifier,
+  isIfStatement,
+  isJSXNamespacedName,
+  isLogicalExpression,
+  isProgram,
   isRestElement,
   isStatement,
   JSXNamespacedName,
-  LVal, ReturnStatement,
+  LVal,
+  ReturnStatement,
   returnStatement,
   SpreadElement,
   Statement,
@@ -25,11 +34,9 @@ import {
   variableDeclarator,
   VariableDeclarator,
 } from '@babel/types';
+import { getAllBindingPaths } from './get-all-binding-paths';
 import { InlineFunctionsMap, PluginState } from './index';
-import {
-  canInlineIdentifier,
-  inlineBindingVisitor,
-} from './inline-binding-visitor';
+import { canInlineIdentifier, inlineBindingVisitor } from './inline-binding-visitor';
 import { areParametersInlineable } from './mark-inline-function-visitor';
 
 function getReturnExpression(node: Node): Node | null {
@@ -141,6 +148,25 @@ export function createDeclarator(
   return variableDeclarator(newId, value);
 }
 
+/**
+ * Checks if the binding is only referenced once and none of the referenced paths shadow an
+ * identifier that is referenced in the value of the binding.
+ */
+// function canInlineBinding(binding: Binding, value: Node): boolean {
+//   // TODO this could be improved by allowing the variable to be inlined to any scope
+//   //      as long as any overlapping bindings are renamed to prevent bugs
+//   console.log(getBindingIdentifiers, getBindingIdentifiers(value));
+//   return binding.references === 1
+//     && binding.referencePaths.every(path => (
+//       path.scope === binding.scope
+//         // || Object.values(binding.path.getBindingIdentifierPaths()).every(identifier => (
+//         || Object.values(getBindingIdentifiers(value)).every(identifier => (
+//           binding.scope.getBindingIdentifier(identifier.name)
+//             === path.scope.getBindingIdentifier(identifier.name)
+//         ))
+//     ));
+// }
+
 interface HoistInlineResult {
   hoist: VariableDeclarator[];
   inline: { identifier: Identifier, value: Node | null | undefined }[];
@@ -166,6 +192,7 @@ function createVariableDeclaratorsFromParameters(
           if (binding) {
             if (binding.references === 0) {
               // This binding is not referenced, just ignore it
+              // TODO there could be side effects here that are being removed.
               return result;
             }
             if (binding && binding.references === 1) {
@@ -307,10 +334,7 @@ function inlineIdentifier(
 }
 
 function performEtaExpansion(path: NodePath<CallExpression>): boolean {
-  const callExpressionPath = path;
-  const callee = callExpressionPath.get(
-    'callee',
-  ) as NodePath<FunctionExpression | ArrowFunctionExpression>;
+  const callee = path.get('callee');
   if (!isEtaExpandable(callee)) {
     return false;
   }
@@ -321,16 +345,21 @@ function performEtaExpansion(path: NodePath<CallExpression>): boolean {
     return false;
   }
 
-  const calleeArguments = callee.node.params;
-  const nodeArguments = callExpressionPath.node.arguments;
+  // Rename all of the bound identifiers in the callee if they shadow a declaration in the
+  // destination scope
+  Object.values(getAllBindingPaths(callee)).forEach((identifierPath) => {
+    if (variableInsertionPoint.scope.hasBinding(identifierPath.node.name)) {
+      identifierPath.scope.rename(identifierPath.node.name);
+    }
+  });
 
   // Inline each of the arguments in the callee's body
   const {
     hoist: parameterDeclarators,
     inline: parameterInlines,
   } = createVariableDeclaratorsFromParameters(
-    calleeArguments,
-    nodeArguments,
+    callee.node.params,
+    path.node.arguments,
     callee.scope,
     variableInsertionPoint.scope,
   );
@@ -364,7 +393,7 @@ function performEtaExpansion(path: NodePath<CallExpression>): boolean {
   }
 
   // This is a problem. This could cause the variable insertion point to change into a block.
-  callExpressionPath.replaceWith(returnExpression);
+  path.replaceWith(returnExpression);
 
   // Insert all hoisted variables into the insertion point
   const declarators = [

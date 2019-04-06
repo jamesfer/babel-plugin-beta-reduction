@@ -30,6 +30,7 @@
     "@types/babel__template": "^7.0.2",
     "@types/babel__traverse": "^7.0.4",
     "@types/jest": "^23.3.10",
+    "@types/lodash": "^4.14.123",
     "@types/mz": "^0.0.32",
     "@types/node": "^10.12.12",
     "babel-core": "^7.0.0-bridge.0",
