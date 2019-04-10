@@ -3,15 +3,18 @@ import {
   isAssignmentPattern,
   isLabeledStatement,
   isVariableDeclarator,
-  LabeledStatement,
-  VariableDeclarator,
   isRestElement,
   isFunctionDeclaration,
-  LVal,
   isIdentifier,
   isMemberExpression,
   isClassMethod,
-  isClassProperty, isBreakStatement, isCatchClause, identifier,
+  isClassProperty,
+  isBreakStatement,
+  isCatchClause,
+  identifier,
+  isObjectProperty,
+  isObjectMethod,
+  isSpreadElement,
 } from '@babel/types';
 import { Node, NodePath, Visitor } from '@babel/traverse';
 
@@ -31,22 +34,29 @@ function matchesIdentifier(lVal: Node | null, identifier: Identifier): boolean {
  */
 export function canInlineIdentifier(path: NodePath<Identifier>): boolean {
   const parentNode = path.parentPath.node;
-  return !(isLabeledStatement(parentNode) && matchesIdentifier(parentNode.label, path.node))
-    && !(isVariableDeclarator(parentNode) && matchesIdentifier(parentNode.id, path.node))
-    && !(isFunctionDeclaration(parentNode) && (
-      matchesIdentifier(parentNode.id, path.node)
-        || (path.inList && path.parentKey === 'params' && matchesIdentifier(
-          parentNode.params[path.listKey as unknown as number],
-          path.node,
-        ))
-    ))
-    && !(isAssignmentPattern(parentNode) && matchesIdentifier(parentNode.left, path.node))
-    && !(isRestElement(parentNode) && matchesIdentifier(parentNode.argument, path.node))
-    && !(isMemberExpression(parentNode) && matchesIdentifier(parentNode.property, path.node))
-    && !(isClassMethod(parentNode) && matchesIdentifier(parentNode.key, path.node))
-    && !(isClassProperty(parentNode) && matchesIdentifier(parentNode.key, path.node))
-    && !(isBreakStatement(parentNode) && matchesIdentifier(parentNode.label, path.node))
-    && !(isCatchClause(parentNode) && matchesIdentifier(parentNode.param,  path.node));
+  return !(
+    isLabeledStatement(parentNode) && matchesIdentifier(parentNode.label, path.node)
+      || isVariableDeclarator(parentNode) && matchesIdentifier(parentNode.id, path.node)
+      || isFunctionDeclaration(parentNode) && (
+        matchesIdentifier(parentNode.id, path.node)
+          || (path.inList && path.parentKey === 'params' && matchesIdentifier(
+            parentNode.params[path.listKey as unknown as number],
+            path.node,
+          ))
+      )
+      || isAssignmentPattern(parentNode) && matchesIdentifier(parentNode.left, path.node)
+      || isRestElement(parentNode) && matchesIdentifier(parentNode.argument, path.node)
+      || isMemberExpression(parentNode) && matchesIdentifier(parentNode.property, path.node)
+      || isClassMethod(parentNode) && matchesIdentifier(parentNode.key, path.node)
+      || isClassProperty(parentNode) && matchesIdentifier(parentNode.key, path.node)
+      || isBreakStatement(parentNode) && matchesIdentifier(parentNode.label, path.node)
+      || isCatchClause(parentNode) && matchesIdentifier(parentNode.param,  path.node)
+      || (
+        (isObjectProperty(parentNode) || isObjectMethod(parentNode))
+          && path.key === 'key'
+          && matchesIdentifier(parentNode.key, path.node)
+      )
+  );
   // TODO maybe turn this into a whitelist
 }
 
