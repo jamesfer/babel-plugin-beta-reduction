@@ -1,4 +1,5 @@
 import { ArrowFunctionExpression } from '@babel/types';
+import { inlineObjectBindingVisitor } from './inline-object-binding-visitor';
 import { combineVisitors } from './utils/combine-visitors';
 import { inlineObjectLiteralReferenceVisitor } from './inline-object-literal-reference-visitor';
 import { markInlineFunctionsVisitor } from './mark-inline-function-visitor';
@@ -24,6 +25,7 @@ export default function plugin(): PluginObj<PluginState> {
       markInlineFunctionsVisitor,
       performEtaExpansionVisitor,
       inlineObjectLiteralReferenceVisitor,
+      inlineObjectBindingVisitor,
     ),
   };
 }

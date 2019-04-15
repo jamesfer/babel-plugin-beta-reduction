@@ -299,7 +299,7 @@ function convertToStatement(node: Node): Statement {
 function insertStatementsBeforeExpression(
   insertionPoint: NodePath,
   statements: Statement[],
-): void {
+): [NodePath] | null {
   const parentPath = insertionPoint.parentPath;
   if (parentPath.isIfStatement()) {
     const key = insertionPoint.parentKey
@@ -308,6 +308,7 @@ function insertStatementsBeforeExpression(
       ...statements,
       convertToStatement(insertionPoint.node),
     ])));
+    return [insertionPoint.parentPath.get(key) as NodePath];
   }
 
   if (parentPath.isArrowFunctionExpression()) {
@@ -317,11 +318,32 @@ function insertStatementsBeforeExpression(
       ...statements,
       returnStatement(insertionPoint.node as Expression),
     ])));
+    return [insertionPoint.parentPath.get(key) as NodePath];
   }
 
   if (parentPath.isBlock() || parentPath.isProgram()) {
-    insertionPoint.insertBefore(statements);
+    return insertionPoint.insertBefore(statements);
   }
+
+  return null;
+}
+
+function liftVariableDeclarations(
+  previousScope: Scope,
+  insertionPoint: NodePath,
+  declarations: VariableDeclaration[],
+): [NodePath] | null {
+  const newPaths = insertStatementsBeforeExpression(insertionPoint, declarations);
+  if (newPaths && previousScope !== insertionPoint.scope) {
+    declarations.forEach((declaration) => {
+      declaration.declarations.forEach((declarator) => {
+        if (isIdentifier(declarator.id)) {
+          previousScope.moveBindingTo(declarator.id.name, insertionPoint.scope);
+        }
+      });
+    });
+  }
+  return newPaths;
 }
 
 function inlineIdentifier(
@@ -405,7 +427,8 @@ function performEtaExpansion(path: NodePath<CallExpression>): boolean {
   // TODO if there are no statements to hoist, we don't actually need to be able to find a variable
   //      insertion point, yet if one is not located the function exits early.
   if (declarators.length > 0) {
-    insertStatementsBeforeExpression(
+    liftVariableDeclarations(
+      callee.scope,
       variableInsertionPoint,
       [variableDeclaration('const', declarators)],
     );

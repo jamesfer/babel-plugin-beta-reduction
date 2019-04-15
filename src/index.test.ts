@@ -473,6 +473,24 @@ console.log(incSq(1));`,
     'console.log((1 + 1) ** 2);',
   ));
 
+  it('should not inline a function into a member expression', () => expectTransform(
+    `
+/** @inline */
+function j() {
+  return { j: 1 };
+}
+
+function t() {
+  return j();
+}`,
+    `
+function t() {
+  return {
+    j: 1
+  };
+}`,
+  ));
+
   it('should inline rest params', async () => {
     await expectTransform(
       `
@@ -646,6 +664,242 @@ function a(t, f) {
 
 const result = t => u => a(t, () => 1 + 1);`,
     'const result = t => t ? 1 + 1 : null;',
+  ));
+
+  it('should inline an object declaration if it is only used in member expressions', () => (
+    expectTransform(
+      `
+function a() {
+  const obj = { t: 1, u: 2 };
+  console.log(obj.t, obj.u);
+}`,
+      `
+function a() {
+  console.log(1, 2);
+}`,
+    )
+  ));
+
+  it('should inline an object declaration inside an function expression', () => (
+    expectTransform(
+      `
+const a = function () {
+  const obj = { t: 1, u: 2 };
+  console.log(obj.t, obj.u);
+}`,
+      `
+const a = function () {
+  console.log(1, 2);
+};`,
+    )
+  ));
+
+  it('should inline an object declaration inside an arrow function expression', () => (
+    expectTransform(
+      `
+const a = () => {
+  const obj = { t: 1, u: 2 };
+  console.log(obj.t, obj.u);
+}`,
+      `
+const a = () => {
+  console.log(1, 2);
+};`,
+    )
+  ));
+
+  it('should inline an object declaration with a dynamic key', () => expectTransform(
+    `
+function a() {
+  const obj = { ['t' + '1']: 1 };
+  console.log(obj.t1);
+}`,
+    `
+function a() {
+  console.log(1);
+}`,
+  ));
+
+  it('should inline an object with a spread element', () => expectTransform(
+    `
+function a() {
+  const obj = { ...{ t: 1 } };
+  console.log(obj.t);
+}`,
+    `
+function a() {
+  console.log(1);
+}`,
+  ));
+
+  it('should inline an object with duplicate keys', () => expectTransform(
+    `
+function a() {
+  const obj = { t: 1, ['t']: 2 };
+  console.log(obj.t);
+}`,
+    `
+function a() {
+  console.log(2);
+}`,
+  ));
+
+  it('should not inline an object that has a reference that is not a member expression', () => (
+    expectTransform(
+      `
+function a() {
+  const obj = { t: 1 };
+  console.log(obj, obj.t);
+}`,
+      `
+function a() {
+  const obj = {
+    t: 1
+  };
+  console.log(obj, obj.t);
+}`)
+  ));
+
+  it('should not inline an object that has dynamic spread keys referenced', () => (
+    expectTransform(
+      `
+function a(b) {
+  const obj = { t: 1, ...b };
+  console.log(obj.t);
+}`,
+      `
+function a(b) {
+  const obj = {
+    t: 1,
+    ...b
+  };
+  console.log(obj.t);
+}`,
+    )
+  ));
+
+  it('should inline an object that has dynamic spread keys overwritten with static ones', () => (
+    expectTransform(
+      `
+function a(b) {
+  const obj = { ...b, t: 1 };
+  console.log(obj.t);
+}`,
+      `
+function a(b) {
+  console.log(1);
+}`,
+    )
+  ));
+
+  it('should not inline an object that has dynamic computed keys referenced', () => (
+    expectTransform(
+      `
+function a(b) {
+  const obj = { t: 1, [b]: 2 };
+  console.log(obj.t);
+}`,
+      `
+function a(b) {
+  const obj = {
+    t: 1,
+    [b]: 2
+  };
+  console.log(obj.t);
+}`,
+    )
+  ));
+
+  it('should not inline an object reference that is not the subject of a MemberExpression', () => (
+    expectTransform(
+      `
+function a(b) {
+  const obj = { t: 1 };
+  console.log(b.obj);
+}`,
+      `
+function a(b) {
+  console.log(b.obj);
+}`,
+    )
+  ));
+
+  it('should inline an object reference that appeared during eta expansion', () => expectTransform(
+    `
+/** @inline */
+function a(b) {
+  return { result: b + 1, message: 'Incremented' };
+}
+
+function d(b) {
+  const obj = a(b);
+  console.log(obj.result, obj.message);
+}`,
+    `
+function d(b) {
+  console.log(b + 1, 'Incremented');
+}`,
+  ));
+
+  it('it should inline an object literal that was hoisted during eta expansion', () => (
+    expectTransform(
+      `
+/** @inline */
+function getValue(monad) {
+  return monad.maybe === 0 ? null : monad.value;
+}
+
+function a() {
+  return getValue({ value: 123, maybe: 1 });
+}`,
+      `
+function a() {
+  return 1 === 0 ? null : 123;
+}`,
+    )
+  ));
+
+  // TODO investigate why the intermediate functions are not inlined
+  it('should inline an object reference that appeared late during eta expansion', () => (
+    expectTransform(
+      `
+/** @inline */
+function just(value) {
+  return { value, maybe: 1 };
+}
+
+/** @inline */
+function bindMaybe(monad, fn) {
+  return monad.maybe === 0 ? null : fn(monad.value);
+}
+
+/** @inline */
+function bindResult(monad, operation) {
+  return tokens => bindMaybe(monad(tokens), result => operation(result[1])(result[0]));
+}
+
+/** @inline */
+function askTokens() {
+  return tokens => just([tokens, tokens]);
+}
+
+function takeOne(predicate) {
+  return bindResult(askTokens(), tokens => (
+    tokens.length > 0 && predicate(tokens[0])
+      ? () => just([tokens.slice(1), tokens[0]])
+      : () => null
+  ));
+}`,
+      `
+function takeOne(predicate) {
+  return tokens => {
+    return 1 === 0 ? null : (tokens.length > 0 && predicate(tokens[0]) ? () => ({
+      value: [tokens.slice(1), tokens[0]],
+      maybe: 1
+    }) : () => null)(tokens);
+  };
+}`,
+    )
   ));
 
   it.each([1/*, 2, 3, 4, 5*/])('should inline many functions', i => (
