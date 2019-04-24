@@ -1,8 +1,8 @@
-import { Visitor } from '@babel/traverse';
+import { NodePath, VisitNodeFunction, Visitor, Node } from '@babel/traverse';
 import { compact, groupBy, mapValues, toPairs } from 'lodash';
 import { flatMap } from 'tslint/lib/utils';
 
-function callEvery(functions: Function[]): Function | null {
+function callEvery<S>(functions: VisitNodeFunction<S, Node>[]): Function | null {
   if (functions.length === 0) {
     return null;
   }
@@ -11,13 +11,17 @@ function callEvery(functions: Function[]): Function | null {
     return functions[0];
   }
 
-  return function (this: any, ...args: any[]) {
-    functions.forEach(func => func.apply(this, args));
+  return function (this: any, path: NodePath, state: S) {
+    functions.forEach((func) => {
+      if (path.node) {
+        func.call(this, path, state);
+      }
+    });
   };
 }
 
-function makeCombinedVisitorFunction(
-  visitors: Function[],
+function makeCombinedVisitorFunction<S>(
+  visitors: VisitNodeFunction<S, Node>[],
   kind: 'enter' | 'exit',
 ): Function | null {
   return callEvery(compact(visitors.map(func => (
