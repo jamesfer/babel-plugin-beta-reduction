@@ -1,5 +1,7 @@
 import { ArrowFunctionExpression } from '@babel/types';
 import { inlineObjectBindingVisitor } from './inline-object-binding-visitor';
+import { inlinePointlessBindingsVisitor } from './inline-pointless-bindings';
+import { inlineSingleUseBindingsVisitor } from './inline-single-use-bindings';
 import { combineVisitors } from './utils/combine-visitors';
 import { inlineObjectLiteralReferenceVisitor } from './inline-object-literal-reference-visitor';
 import { markInlineFunctionsVisitor } from './mark-inline-function-visitor';
@@ -26,6 +28,8 @@ export default function plugin(): PluginObj<PluginState> {
       performEtaExpansionVisitor,
       inlineObjectLiteralReferenceVisitor,
       inlineObjectBindingVisitor,
+      inlineSingleUseBindingsVisitor,
+      inlinePointlessBindingsVisitor,
     ),
   };
 }
