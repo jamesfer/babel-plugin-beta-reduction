@@ -14,7 +14,6 @@ import {
   identifier,
   isObjectProperty,
   isObjectMethod,
-  isSpreadElement,
 } from '@babel/types';
 import { Node, NodePath, Visitor } from '@babel/traverse';
 
@@ -46,7 +45,11 @@ export function canInlineIdentifier(path: NodePath<Identifier>): boolean {
       )
       || isAssignmentPattern(parentNode) && matchesIdentifier(parentNode.left, path.node)
       || isRestElement(parentNode) && matchesIdentifier(parentNode.argument, path.node)
-      || isMemberExpression(parentNode) && matchesIdentifier(parentNode.property, path.node)
+      || (
+        isMemberExpression(parentNode)
+          && !parentNode.computed
+          && matchesIdentifier(parentNode.property, path.node)
+      )
       || isClassMethod(parentNode) && matchesIdentifier(parentNode.key, path.node)
       || isClassProperty(parentNode) && matchesIdentifier(parentNode.key, path.node)
       || isBreakStatement(parentNode) && matchesIdentifier(parentNode.label, path.node)
