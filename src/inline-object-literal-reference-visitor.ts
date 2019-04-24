@@ -1,25 +1,18 @@
-import { Visitor } from '@babel/traverse';
-import {
-  isIdentifier,
-  isObjectExpression,
-  isObjectProperty,
-  ObjectProperty,
-} from '@babel/types';
+import { NodePath, Visitor } from '@babel/traverse';
+import { getPropertyName } from './ast-utils/get-property-name';
+import { getPropertyValueFromObject } from './ast-utils/get-property-value-from-object';
 
 export const inlineObjectLiteralReferenceVisitor: Visitor = {
   MemberExpression: {
     exit(path) {
-      if (isObjectExpression(path.node.object) && isIdentifier(path.node.property)) {
-        const propertyNode = path.node.object.properties.find(
-          (property): property is ObjectProperty => (
-            isObjectProperty(property)
-            && isIdentifier(property.key)
-            && property.key.name === path.node.property.name
-          ),
-        );
-
-        if (propertyNode) {
-          path.replaceWith(propertyNode.value);
+      const object = path.get('object') as NodePath;
+      if (object.isObjectExpression()) {
+        const propertyName = getPropertyName(path.get('property') as NodePath);
+        if (propertyName !== null) {
+          const propertyNode = getPropertyValueFromObject(propertyName, object);
+          if (propertyNode) {
+            path.replaceWith(propertyNode);
+          }
         }
       }
     },
