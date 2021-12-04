@@ -14,11 +14,14 @@
     ]
   },
   "jest": {
-    "preset": "ts-jest"
+    "preset": "ts-jest",
+    "testEnvironment": "node"
   },
   "dependencies": {
     "@babel/plugin-transform-parameters": "^7.2.0",
-    "lodash": "^4.17.11"
+    "@types/webpack": "^4.32.1",
+    "lodash": "^4.17.11",
+    "webpack": "^4.39.1"
   },
   "devDependencies": {
     "@babel/core": "^7.2.0",

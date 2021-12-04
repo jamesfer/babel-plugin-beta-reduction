@@ -16,11 +16,14 @@ export interface PluginState {
   inlineFunctions: InlineFunctionsMap;
 }
 
-export default function plugin(): PluginObj<PluginState> {
-  return {
+export default function plugin(): () => PluginObj<PluginState> {
+  // TODO correctly cache function references across files
+  const inlineFunctionCache = {};
+
+  return () => ({
     name: 'inline-functions',
     pre() {
-      this.inlineFunctions = {};
+      this.inlineFunctions = inlineFunctionCache;
     },
     visitor: combineVisitors<PluginState>(
       // TODO handle cases where the function is declared after it's use
@@ -31,5 +34,5 @@ export default function plugin(): PluginObj<PluginState> {
       inlineSingleUseBindingsVisitor,
       inlinePointlessBindingsVisitor,
     ),
-  };
+  });
 }

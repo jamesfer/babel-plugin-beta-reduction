@@ -9,7 +9,7 @@ function transform(code: string): Promise<BabelFileResult | null> {
     ast: true,
     comments: false,
     plugins: [
-      plugin,
+      plugin(),
       // require('@babel/plugin-transform-parameters'),
     ],
   });
@@ -96,7 +96,7 @@ console.log(add(1, 3));`,
     'console.log(1 + 3 + 10 + 20);',
   ));
 
-  it.skip('should inline a complex declaration', () => expectTransform(
+  it('should inline a complex declaration', () => expectTransform(
     `
 /**
  * @inline
@@ -106,7 +106,7 @@ function add(a, b) {
   return a + b + c;
 }
 console.log(add(1, 3));`,
-    'console.log(1 + 3 + c ** 4);',
+    'console.log(1 + 3 + 6 ** 4);',
   ));
 
   it('should not hoist a variable that is declared inside a conditional expression', () => (
@@ -114,12 +114,12 @@ console.log(add(1, 3));`,
       `
 const a = something ? (() => {
   const b = 5;
-  return b / 3;
+  return b / b;
 })() : 6;`,
       `
 const a = something ? (() => {
   const b = 5;
-  return b / 3;
+  return b / b;
 })() : 6;`,
     )
   ));
@@ -297,8 +297,7 @@ function outer(v) {
 }`,
       `
 function outer(v) {
-  const _v2 = v;
-  return Math.sin(_v2) * Math.cos(_v2) * 2;
+  return Math.sin(v) * Math.cos(v) * 2;
 }`,
     )
   ));
@@ -367,6 +366,7 @@ const result = [1, 2, 3].map(number => {
     'const result = 5;',
   ));
 
+  // Plugin currently just bails when it encounters default args
   it.skip('should correctly hoist parameters with default arguments', () => expectTransform(
     `
 /**
@@ -655,14 +655,14 @@ const r = t => _t => _t2 => [_t2, {
 }];`,
   ));
 
-  it.skip('should inline a lambda that is called from a parameter', () => expectTransform(
+  it('should inline a lambda that is called from a parameter', () => expectTransform(
     `
 /** @inline */
 function a(t, f) {
   return t ? f() : null;
 }
 
-const result = t => u => a(t, () => 1 + 1);`,
+const result = t => a(t, () => 1 + 1);`,
     'const result = t => t ? 1 + 1 : null;',
   ));
 
@@ -801,11 +801,10 @@ function a(b) {
 }`,
       `
 function a(b) {
-  const obj = {
+  console.log({
     t: 1,
     [b]: 2
-  };
-  console.log(obj.t);
+  }.t);
 }`,
     )
   ));
@@ -902,14 +901,14 @@ function takeOne(predicate) {
     )
   ));
 
-  it.each([1/*, 2, 3, 4, 5*/])('should inline many functions', i => (
+  it.skip.each([1/*, 2, 3, 4, 5*/])('should inline many functions', i => (
     expectTransformFile(
       `./test-inputs/token-matchers-${i}.in.js`,
       `./test-inputs/token-matchers-${i}.out.js`,
     )
   ));
 
-  it.each([1, 2, 3, 4/*, 5, 6*/])('should inline the reader monad',  i => (
+  it.skip.each([1, 2, 3, 4/*, 5, 6*/])('should inline the reader monad',  i => (
     expectTransformFile(
       `./test-inputs/reader-monad-${i}.in.js`,
       `./test-inputs/reader-monad-${i}.out.js`,

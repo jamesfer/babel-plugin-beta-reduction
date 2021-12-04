@@ -41,13 +41,13 @@ describe('combineVisitors', () => {
     const visitor2 = { Identifier: jest.fn().mockReturnThis() };
 
     const combinedVisitor = combineVisitors(visitor1, visitor2);
-    const path = {};
+    const path = { node: {} };
     const state = {};
-    (combinedVisitor.Identifier as any).enter.call(state, path);
+    (combinedVisitor.Identifier as any).enter.call(state, path, state);
 
     [visitor1, visitor2].forEach(({ Identifier: fn }) => {
       expect(fn).toBeCalledTimes(1);
-      expect(fn).toBeCalledWith(path);
+      expect(fn).toBeCalledWith(path, state);
       expect(fn).toReturnWith(state);
     });
   });
